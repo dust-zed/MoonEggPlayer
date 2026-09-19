@@ -1,0 +1,21 @@
+# Android Studio / IntelliJ
+.idea/
+*.iml
+
+# Gradle / Kotlin caches and generated build outputs
+.gradle/
+.kotlin/
+build/
+
+# Machine-specific Android SDK configuration
+local.properties
+
+# Native build intermediates
+.externalNativeBuild/
+.cxx/
+
+# Android Studio captures
+/captures/
+
+# macOS metadata
+.DS_Store

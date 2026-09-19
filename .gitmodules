@@ -1,0 +1,3 @@
+[submodule "native/MoonEgg"]
+	path = native/MoonEgg
+	url = git@github.com:dust-zed/MoonEgg.git
