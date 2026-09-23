@@ -5,18 +5,25 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.interaction.Interaction
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -265,6 +272,16 @@ private fun PlayerDemo(
         )
         Text("进度：${ui.positionMs / 1000.0} 秒 / $durationText")
 
+        PlaybackSeekBar(
+            positionMs = ui.positionMs,
+            durationMs = ui.durationMs,
+            enabled = canSeek,
+            onSeek = { targetMs ->
+                onCommand(DemoCommand.Seek(targetMs))
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
+
         Button(
             enabled = ui.connected &&
             ui.state in setOf(NativeState.IDLE),
@@ -318,4 +335,67 @@ private fun PlayerDemo(
             )
         }
     }
+}
+
+@Composable
+private fun PlaybackSeekBar(
+    positionMs: Long,
+    durationMs: Long?,
+    enabled: Boolean,
+    onSeek: (Long) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val totalDurationMs = (durationMs ?: 0L).coerceAtLeast(0L)
+    val sliderEnabled = enabled && totalDurationMs > 0L
+    val playbackFraction = if (totalDurationMs > 0L) {
+        (positionMs.toDouble() / totalDurationMs)
+            .coerceIn(0.0, 1.0)
+            .toFloat()
+    } else {
+        0f
+    }
+
+    var dragFraction by remember(durationMs, sliderEnabled) {
+        mutableStateOf<Float?>(null)
+    }
+
+    val displayedFraction: Float = dragFraction ?: playbackFraction
+
+    val interactionSource = remember(durationMs, sliderEnabled) {
+        MutableInteractionSource()
+    }
+
+    LaunchedEffect(interactionSource) {
+        interactionSource.interactions.collect { interaction ->
+            when (interaction) {
+                is DragInteraction.Cancel -> {
+                    dragFraction = null
+                }
+                else -> {}
+            }
+        }
+    }
+
+    Slider(
+        value = displayedFraction,
+        onValueChange = { fraction ->
+            if (sliderEnabled) {
+                dragFraction = fraction.coerceIn(0f, 1f)
+            }
+        },
+        onValueChangeFinished = {
+            val targetFraction = dragFraction
+
+            dragFraction = null
+
+            if (sliderEnabled && targetFraction != null) {
+                val targetMs = (targetFraction.toDouble() * totalDurationMs).toLong().coerceIn(0L, totalDurationMs)
+                onSeek(targetMs)
+            }
+        },
+        enabled = sliderEnabled,
+        valueRange = 0f..1f,
+        interactionSource = interactionSource,
+        modifier = modifier
+    )
 }
