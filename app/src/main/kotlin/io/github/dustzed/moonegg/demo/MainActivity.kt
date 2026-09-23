@@ -42,16 +42,25 @@ import java.lang.Compiler.command
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 
-private enum class DemoCommand {
-    PREPARE, PLAY, PAUSE, STOP
+private sealed interface DemoCommand {
+    data object Prepare : DemoCommand
+    data object Play : DemoCommand
+    data object Pause : DemoCommand
+    data object Stop : DemoCommand
+
+    data class Seek(
+        val positionMs: Long
+    ) : DemoCommand
 }
 
 private data class DemoUiState(
     val connected: Boolean = false,
     val state: NativeState = NativeState.IDLE,
     val positionMs: Long = 0,
-    val message: String = ""
+    val message: String = "",
+    val durationMs: Long? = null,
 )
+private const  val DEMO_SEEK_POSITION_MS: Long = 4_000L
 
 class MainActivity : ComponentActivity() {
 
@@ -124,10 +133,11 @@ class MainActivity : ComponentActivity() {
                     val command = commands.tryReceive().getOrNull() ?: break
                     state = state.copy(message = "")
                     when(command) {
-                        DemoCommand.PREPARE -> current.prepare()
-                        DemoCommand.PLAY -> current.play()
-                        DemoCommand.PAUSE -> current.pause()
-                        DemoCommand.STOP -> current.stop()
+                        DemoCommand.Prepare -> current.prepare()
+                        DemoCommand.Play -> current.play()
+                        DemoCommand.Pause -> current.pause()
+                        DemoCommand.Stop -> current.stop()
+                        is DemoCommand.Seek -> current.seek(command.positionMs)
                     }
                 }
 
@@ -136,16 +146,26 @@ class MainActivity : ComponentActivity() {
 
                     state = when (event) {
                         is NativeEvent.StateChanged -> {
+                            val resetTimeline = event.current in setOf(NativeState.IDLE,
+                                NativeState.PREPARING, NativeState.RELEASED)
+
                             state.copy(
                                 state = event.current,
-                                positionMs = if (event.current == NativeState.IDLE) {
+                                positionMs = if (resetTimeline) {
                                     0L
                                 } else {
                                     state.positionMs
+                                },
+                                durationMs = if (resetTimeline) {
+                                    null
+                                } else {
+                                    state.durationMs
                                 }
                             )
                         }
-
+                        is NativeEvent.DurationChanged -> {
+                            state.copy(durationMs = event.durationMs)
+                        }
                         is NativeEvent.AudioProgress -> {
                             state.copy(positionMs = event.positionMs)
                         }
@@ -153,7 +173,9 @@ class MainActivity : ComponentActivity() {
                         is NativeEvent.PlaybackFailed -> {
                             state.copy(
                                 state = NativeState.ERROR,
-                                message = event.reason
+                                message = event.reason,
+                                positionMs = 0L,
+                                durationMs = null
                             )
                         }
 
@@ -172,7 +194,9 @@ class MainActivity : ComponentActivity() {
                 state.copy(
                     connected = false,
                     state = NativeState.ERROR,
-                    message = error.message ?: error.toString()
+                    message = error.message ?: error.toString(),
+                    positionMs = 0L,
+                    durationMs = null
                 )
             )
         } finally {
@@ -218,6 +242,9 @@ private fun PlayerDemo(
     onCommand: (DemoCommand) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val canSeek = ui.connected && ui.state in setOf(NativeState.READY, NativeState.PLAYING,
+        NativeState.PAUSED)
+    val durationText = if (ui.durationMs == null) "未知" else "${ui.durationMs / 1000.0} 秒"
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -231,17 +258,17 @@ private fun PlayerDemo(
         Text("MoonEgg . WAV 模拟播放")
         Text(
             if (ui.connected) {
-                "状态：{ui.state}"
+                "状态：${ui.state}"
             } else {
                 "播放器未连接"
             }
         )
-        Text("进度：${ui.positionMs / 1000.0} 秒")
+        Text("进度：${ui.positionMs / 1000.0} 秒 / $durationText")
 
         Button(
             enabled = ui.connected &&
             ui.state in setOf(NativeState.IDLE),
-            onClick = { onCommand(DemoCommand.PREPARE) }
+            onClick = { onCommand(DemoCommand.Prepare) }
         ) {
             Text("准备")
         }
@@ -249,7 +276,7 @@ private fun PlayerDemo(
         Button(
             enabled = ui.connected &&
             ui.state in setOf(NativeState.READY, NativeState.PAUSED),
-            onClick = { onCommand(DemoCommand.PLAY) }
+            onClick = { onCommand(DemoCommand.Play) }
         ) {
             Text("播放")
         }
@@ -257,15 +284,29 @@ private fun PlayerDemo(
         Button(
             enabled = ui.connected &&
             ui.state == NativeState.PLAYING,
-            onClick = { onCommand(DemoCommand.PAUSE)}
+            onClick = { onCommand(DemoCommand.Pause)}
         ) {
             Text("暂停")
         }
 
         Button(
+            enabled = canSeek,
+            onClick = { onCommand(DemoCommand.Seek(0))}
+        ) {
+            Text("回到开头")
+        }
+
+        Button(
+            enabled = canSeek,
+            onClick = { onCommand(DemoCommand.Seek(DEMO_SEEK_POSITION_MS))}
+        ) {
+            Text("跳到 4 秒")
+        }
+
+        Button(
             enabled = ui.connected &&
             ui.state !in setOf(NativeState.IDLE, NativeState.RELEASED),
-            onClick = { onCommand(DemoCommand.STOP) }
+            onClick = { onCommand(DemoCommand.Stop) }
         ) {
             Text("停止")
         }
