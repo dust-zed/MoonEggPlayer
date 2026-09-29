@@ -122,14 +122,7 @@ class MainActivity : ComponentActivity() {
         var state = DemoUiState()
 
         try {
-            val wavFile = File(filesDir, "demo.wav")
-
-            assets.open("demo.wav").use { input ->
-                wavFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            }
-            val current = NativePlayer(wavFile.absolutePath)
+            val current = createAacDemoPlayer()
             player = current
 
             state = state.copy(connected = true)
@@ -177,6 +170,11 @@ class MainActivity : ComponentActivity() {
                             state.copy(positionMs = event.positionMs)
                         }
 
+                        is NativeEvent.SeekCompleted -> {
+                            Log.d("MoonEgg","Seek 完成： 请求 ${event.requestedMs} ms, 落点 ${event.landedMs} ms")
+                            state.copy(positionMs = event.landedMs)
+                        }
+
                         is NativeEvent.PlaybackFailed -> {
                             state.copy(
                                 state = NativeState.ERROR,
@@ -219,6 +217,20 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    private fun createAacDemoPlayer(): NativePlayer {
+        return assets.openFd("demo-nonnegative.m4a").use { asset ->
+            val fd = asset.parcelFileDescriptor.fd
+            val offset = asset.startOffset
+            val length = asset.declaredLength
+            require(length >= 0) { "WAV asset 长度未知" }
+            Log.d("MoonEgg", "asset offset: $offset, length: $length")
+
+            val created = NativePlayer.fromAacFileDescriptor(fd, offset, length)
+
+            created
+        }
+    }
 }
 
 @Composable
@@ -250,7 +262,7 @@ private fun PlayerDemo(
     modifier: Modifier = Modifier
 ) {
     val canSeek = ui.connected && ui.state in setOf(NativeState.READY, NativeState.PLAYING,
-        NativeState.PAUSED)
+        NativeState.PAUSED, NativeState.ENDED)
     val durationText = if (ui.durationMs == null) "未知" else "${ui.durationMs / 1000.0} 秒"
     Column(
         modifier = modifier

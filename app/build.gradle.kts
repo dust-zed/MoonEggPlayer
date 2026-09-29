@@ -33,6 +33,11 @@ android {
     buildFeatures {
         compose = true
     }
+
+    androidResources {
+        noCompress += "wav"
+        noCompress += "m4a"
+    }
 }
 
 dependencies {
