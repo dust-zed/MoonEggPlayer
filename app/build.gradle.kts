@@ -37,6 +37,7 @@ android {
     androidResources {
         noCompress += "wav"
         noCompress += "m4a"
+        noCompress += "mp4"
     }
 }
 
